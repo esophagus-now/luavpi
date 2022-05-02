@@ -15,14 +15,17 @@ module pipe_stage #(
     input i_rdy
 );
 
+    initial $monitor("Somebody changed my clk to %d", i_clk);
     
 endmodule
 
 
 module tb;
 
-pipe_stage test();
-    
+pipe_stage DUT();
+
+
+
 initial begin
     $display("Begin typing lua code. (Sorry, no autocomplete!)");
     $hello;
