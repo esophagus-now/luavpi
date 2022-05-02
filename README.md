@@ -3,12 +3,10 @@
 
 Project started on May 31 / 2022
 
-I wanted to make an easy way to create/debug verilog simulations. Because Lua is (probably) my favourite programming language, and because it is so easy to add it as an extension language, it made sense to try this out.
-
-Basically this project started as a proof-of-concept, but it's already starting to look a little useful.
+I wanted an easy way to create/debug verilog simulations. Because Lua is (probably) my favourite programming language, and because it is so easy to add it as an extension language, it made sense to try this out.
 
 ## Quickstart
-(In case you are looking at this on github, please navigate to [https://replit.com/@Mahkoe/Embedded-lua-in-verilog](https://replit.com/@Mahkoe/Embedded-lua-in-verilog) to run this in the online IDE. I have not gone to the trouble to make this repo work on any platform besides repl.it)
+_In case you are looking at this on github, please navigate to [https://replit.com/@Mahkoe/Embedded-lua-in-verilog](https://replit.com/@Mahkoe/Embedded-lua-in-verilog) to run this in the online IDE. I have not gone to the trouble to make this repo work on any platform besides repl.it_
 
 Run `go.sh`. This will compile the C++ code, then compile the Verilog code, and then it will start the simulation. Try the following code snippet:
 
@@ -30,8 +28,8 @@ print(DUT)
 DUT = tb:handle_by_name("DUT")
 
 -- Instead of vpi_iterate and vpi_scan, luavpi provides
--- vpi.get_all(handle, type) [ or, using the shorthand,
--- handle:get_all(type) ]
+-- vpi.get_all(handle, type). Or, using the shorthand,
+-- handle:get_all(type)
 submodules = tb:get_all(vpi.Module)
 for i,v in ipairs(submodules) do print(i,v) end
 
@@ -60,6 +58,7 @@ dofile "fake_clock.lua"
 
 -- Notice that the fake_clock immediately sets the clock to 0,
 -- but then stops...
+
 -- The fake_clock coroutine is started, but our interactive
 -- REPL in the main thread is preventing the simulation from
 -- continuing. So let our main thread block for a while; it
@@ -73,16 +72,16 @@ vpi.wait(1234)
 ```
 
 ## API description
-(This is subject to change very quickly since I'm still bringing up this project in the first place)
+_This is subject to change since I'm still bringing up this project in the first place_
 
-All functionality is made available in the global `vpi` table. VPI handle objects in Lua have a metatable with a pretty-printer in `__tostring`. The nifty shorthand shown in the quickstart where you can do `h:get_value(type)` is made possible because the `__index` field of the VPI handle metatable point to the `vpi` table.
+All functionality is made available in the global `vpi` table. VPI handle objects in Lua have a metatable with a `__tostring` pretty-printer. The `h:get_value(type)` shorthand shown in the quickstart is possible because the `__index` field of the VPI handle metatable points to the `vpi` table.
 
 Most VPI constants are available in the `vpi` table. If the constant was called `vpiXyzAbc` in C code, then it should be available in Lua with `vpi.XyzAbc`. 
 
-Likewise, a subset of the available VPI functions (listed) below can also be found in this table; if the function is called `vpi_xyz_abc` then it would be available in Lua as `vpi.xyz_abc`. Keep in mind that I always place the vpiHandle argument as the first argument, even when this contradicts the VPI spec.
+Likewise, a subset of the available VPI functions (listed below) can also be found in this table; if the function is called `vpi_xyz_abc` in C then it would be available in Lua as `vpi.xyz_abc`. Keep in mind that I always place the vpiHandle argument as the first argument, even when this contradicts the VPI spec.
 
 The available functions are:
- - `vpi.handle(h, type)` and `vpi.handle_by_name(h,type)`. You can use `nil` as their first argument (this is equivalent to passing `NULL` as the first argument in C). If the C call returns `NULL`, then the call returns `nil` in Lua
+ - `vpi.handle(h, type)` and `vpi.handle_by_name(h,type)`. You can use `nil` as the first argument (this will pass `NULL` as the first argument in C). If the C call returns `NULL`, then the call returns `nil` in Lua
  - `vpi.get(h, type)` and `vpi.get_str(h,type)`
  - `vpi.get_value(h,type)`. Currently supports `vpi[Bin,Oct,Dec,Hex]StrVal`, `vpiIntVal`, `vpiStringVal`, and `vpiTimeVal`
  - `vpi.put_value(h, val)`. Only supports putting integer values.

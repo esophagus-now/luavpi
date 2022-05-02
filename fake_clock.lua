@@ -8,10 +8,10 @@ function fake_clk(period, path)
     print("Making a clock with period " .. period .. " for " .. tostring(m))
     print("(inside " .. tostring(m:handle(vpi.Module)) .. ")")
     while true do
-        m:put_value(1)
+        m:put_value(0)
         --print("tick")
         vpi.wait(period/2)
-        m:put_value(0)
+        m:put_value(1)
         --print("tock")
         vpi.wait(period/2)
     end
