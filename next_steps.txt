@@ -1,0 +1,22 @@
+[ ] Add prompt string argument to repl() call in Lua
+[ ] Steal nicer repl features from standalone lua interpreter
+[ ] Figure out how to get current sim time
+[ ] Add value change and RO sync callbacks
+[ ] Do a better job of dealing with vpi_put_value
+    - It might be enough to just add support for string formats
+    - Should also supply a release function to drop forces
+[ ] Save states? Technically it is possible to save all
+    registers and forced values so that we can reset them
+    later
+    -> This could be written in lua instead of in C++, but
+       of course performance would suffer
+    -> Oh my god! Apparently there are $save and $restart
+       system functions defined by the verilog standard to
+       do exactly this!
+[ ] Timonerie support (https://github.com/esophagus-now/timonerie)
+    -> This shouldn't be too difficult
+[ ] Keep wrapping more VPI functions
+    - vpi_handle_by_index, vpi_handle_by_multi_index
+    - vpi_get_vlog_info
+    - vpi_get_systf_info
+    - etc.

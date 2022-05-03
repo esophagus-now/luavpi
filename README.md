@@ -87,3 +87,5 @@ The available functions are:
  - `vpi.put_value(h, val)`. Only supports putting integer values.
  - `vpi.wait(delay)`. Blocks current coroutine until `delay` simulation time units have elapsed. This uses `cbAfterDelay` behind the scenes so that the coroutine is automatically resumed at the right time.
  - `vpi.get_all(h, type)`. Behind the scenes this uses `vpi_iterate` and `vpi_scan` to fill an array with handles to all instances of `type` in `h`. This array is returned as a Lua table (and it can be empty)
+ - `repl()` to drop to an interactive prompt
+ - `yield()` to yield current thread. This allows the simulation to continue

@@ -15,7 +15,7 @@ module pipe_stage #(
     input i_rdy
 );
 
-    initial $monitor("Somebody changed my clk to %d", i_clk);
+    initial $monitor("Somebody changed my clk to %d\n", i_clk);
     
 endmodule
 
@@ -24,7 +24,11 @@ module tb;
 
 pipe_stage DUT();
 
+event my_ev;
 
+always @(my_ev) begin
+    $display("Someone triggered an event!\n");
+end
 
 initial begin
     $display("Begin typing lua code. (Sorry, no autocomplete!)");
