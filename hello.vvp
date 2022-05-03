@@ -7,9 +7,9 @@
 :vpi_module "/nix/store/q0rhxcs2hfri6ja2fas671ywiszk20qr-iverilog-11.0/lib/ivl/vhdl_textio.vpi";
 :vpi_module "/nix/store/q0rhxcs2hfri6ja2fas671ywiszk20qr-iverilog-11.0/lib/ivl/v2005_math.vpi";
 :vpi_module "/nix/store/q0rhxcs2hfri6ja2fas671ywiszk20qr-iverilog-11.0/lib/ivl/va_math.vpi";
-S_0xe958e0 .scope module, "tb" "tb" 2 23;
+S_0x26748e0 .scope module, "tb" "tb" 2 23;
  .timescale -9 -12;
-S_0xe95a70 .scope module, "DUT" "pipe_stage" 2 25, 2 3 0, S_0xe958e0;
+S_0x2674a70 .scope module, "DUT" "pipe_stage" 2 25, 2 3 0, S_0x26748e0;
  .timescale -9 -12;
     .port_info 0 /INPUT 1 "i_clk";
     .port_info 1 /INPUT 1 "i_reset_n";
@@ -19,32 +19,32 @@ S_0xe95a70 .scope module, "DUT" "pipe_stage" 2 25, 2 3 0, S_0xe958e0;
     .port_info 5 /OUTPUT 8 "o_data";
     .port_info 6 /OUTPUT 1 "o_vld";
     .port_info 7 /INPUT 1 "i_rdy";
-P_0xe5bb60 .param/l "WIDTH" 0 2 4, +C4<00000000000000000000000000001000>;
-o0x7f5c30abe018 .functor BUFZ 1, C4<z>; HiZ drive
-v0xe5dd50_0 .net "i_clk", 0 0, o0x7f5c30abe018;  0 drivers
-o0x7f5c30abe048 .functor BUFZ 8, C4<zzzzzzzz>; HiZ drive
-v0xe5c6c0_0 .net "i_data", 7 0, o0x7f5c30abe048;  0 drivers
-o0x7f5c30abe078 .functor BUFZ 1, C4<z>; HiZ drive
-v0xe5ccc0_0 .net "i_rdy", 0 0, o0x7f5c30abe078;  0 drivers
-o0x7f5c30abe0a8 .functor BUFZ 1, C4<z>; HiZ drive
-v0xe5e490_0 .net "i_reset_n", 0 0, o0x7f5c30abe0a8;  0 drivers
-o0x7f5c30abe0d8 .functor BUFZ 1, C4<z>; HiZ drive
-v0xea5ba0_0 .net "i_vld", 0 0, o0x7f5c30abe0d8;  0 drivers
-o0x7f5c30abe108 .functor BUFZ 8, C4<zzzzzzzz>; HiZ drive
-v0xea5cb0_0 .net "o_data", 7 0, o0x7f5c30abe108;  0 drivers
-o0x7f5c30abe138 .functor BUFZ 1, C4<z>; HiZ drive
-v0xea5d90_0 .net "o_rdy", 0 0, o0x7f5c30abe138;  0 drivers
-o0x7f5c30abe168 .functor BUFZ 1, C4<z>; HiZ drive
-v0xea5e50_0 .net "o_vld", 0 0, o0x7f5c30abe168;  0 drivers
-    .scope S_0xe95a70;
+P_0x263ab60 .param/l "WIDTH" 0 2 4, +C4<00000000000000000000000000001000>;
+o0x7f2bbc39c018 .functor BUFZ 1, C4<z>; HiZ drive
+v0x263cd50_0 .net "i_clk", 0 0, o0x7f2bbc39c018;  0 drivers
+o0x7f2bbc39c048 .functor BUFZ 8, C4<zzzzzzzz>; HiZ drive
+v0x263b6c0_0 .net "i_data", 7 0, o0x7f2bbc39c048;  0 drivers
+o0x7f2bbc39c078 .functor BUFZ 1, C4<z>; HiZ drive
+v0x263bcc0_0 .net "i_rdy", 0 0, o0x7f2bbc39c078;  0 drivers
+o0x7f2bbc39c0a8 .functor BUFZ 1, C4<z>; HiZ drive
+v0x263d490_0 .net "i_reset_n", 0 0, o0x7f2bbc39c0a8;  0 drivers
+o0x7f2bbc39c0d8 .functor BUFZ 1, C4<z>; HiZ drive
+v0x2684ba0_0 .net "i_vld", 0 0, o0x7f2bbc39c0d8;  0 drivers
+o0x7f2bbc39c108 .functor BUFZ 8, C4<zzzzzzzz>; HiZ drive
+v0x2684cb0_0 .net "o_data", 7 0, o0x7f2bbc39c108;  0 drivers
+o0x7f2bbc39c138 .functor BUFZ 1, C4<z>; HiZ drive
+v0x2684d90_0 .net "o_rdy", 0 0, o0x7f2bbc39c138;  0 drivers
+o0x7f2bbc39c168 .functor BUFZ 1, C4<z>; HiZ drive
+v0x2684e50_0 .net "o_vld", 0 0, o0x7f2bbc39c168;  0 drivers
+    .scope S_0x2674a70;
 T_0 ;
-    %vpi_call 2 18 "$monitor", "Somebody changed my clk to %d", v0xe5dd50_0 {0 0 0};
+    %vpi_call 2 18 "$monitor", "Somebody changed my clk to %d", v0x263cd50_0 {0 0 0};
     %end;
     .thread T_0;
-    .scope S_0xe958e0;
+    .scope S_0x26748e0;
 T_1 ;
     %vpi_call 2 30 "$display", "Begin typing lua code. (Sorry, no autocomplete!)" {0 0 0};
-    %vpi_call 2 31 "$hello" {0 0 0};
+    %vpi_call 2 31 "$lua_repl" {0 0 0};
     %delay 10000, 0;
     %vpi_call 2 33 "$display", "Goodbye" {0 0 0};
     %vpi_call 2 34 "$finish" {0 0 0};

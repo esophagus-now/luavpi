@@ -28,7 +28,7 @@ pipe_stage DUT();
 
 initial begin
     $display("Begin typing lua code. (Sorry, no autocomplete!)");
-    $hello;
+    $lua_repl;
     #10
     $display("Goodbye");
     $finish;

@@ -18,4 +18,5 @@ function fake_clk(period, path)
 end
 
 c = coroutine.create(fake_clk)
+-- print("Made new coroutine:" .. tostring(c))
 assert(coroutine.resume(c, 100, "tb.DUT.i_clk"))

@@ -10,11 +10,6 @@ using namespace std;
 
 ostream& el(ostream &o) {return o << "\n";}
 
-static int hello_compiletf([[maybe_unused]] char*user_data) {
-    return 0;
-}
-
-lua_State *g_L;
 int lua_repl();
 
 //Continuation function that just returns the ctx number
@@ -25,31 +20,54 @@ int no_more_questions_your_honour(
     return ctx;
 }
 
-static int lua_repl(lua_State *L) {
+void register_thread(lua_State *L, bool deregister=false) {
+    lua_checkstack(L, 3);
+    
+    lua_pushlightuserdata(L,L);
+    if (!deregister) {
+        lua_pushthread(L);
+    } else {
+        lua_pushnil(L);
+    }
+    lua_rawset(L, LUA_REGISTRYINDEX);
+}
+
+#define deregister_thread(L) register_thread(L, true)
+
+//If top-of-stack has an object of type thread, resumes
+//the REPL in that thread. Otherwise, creates a new thread.
+//TODO: find nice way for each thread to have a different
+//prompt. Also, it would be nice to have built-in readline
+//support, and while we're at it, steal some of the nice
+//REPL features from the lua interpreter (support for multi-
+//line input, automatically printing values from expressions),
+//and autocomplete would be nice...
+int lua_repl(lua_State *L) {
     char buff[80];
     int error;
     int rc, numresults;
 
+    //Note: L can be equal to th
     lua_State *th = lua_tothread(L, -1);
     
-    if (th) {
-        goto run_lua_thread;
-    } 
-    
-    while (fgets(buff, sizeof(buff), stdin) != NULL) {
-        //Call compiled string as a coroutine so it can call vpi.wait
-
+    if (!th) {
         //Make a new thread for the user's input line
-        th = lua_newthread(g_L);
+        th = lua_newthread(L);
         
         //Put this thread into the globals table so it doesn't
         //get garbage collected
-        lua_pushlightuserdata(th,th);
-        lua_pushthread(th);
-        lua_rawset(th, LUA_REGISTRYINDEX);
-
-        //Now we can safely remove the new thread from the main stack
-        lua_pop(g_L, 1);
+        register_thread(th);
+        
+        //Now we can safely remove the new thread from the stack
+        //(so that it does get garbage collected when we're done
+        //with the REPL)
+        lua_pop(L, 1);
+    } else {
+        //If resuming a coroutine, no need to ask for input
+        goto run_the_thing;
+    }
+    
+    while (printf("> "), fgets(buff, sizeof(buff), stdin) != NULL) {
 
         //Try compiling the user's string
         error = luaL_loadbuffer(th, buff, strlen(buff), "stdin");
@@ -59,35 +77,61 @@ static int lua_repl(lua_State *L) {
             continue;
         }
 
-        //If there was already a thread on the stack we'll jump
-        //right to this label
-        run_lua_thread:
+        //Call compiled string as a coroutine so it can call vpi.wait.
+        //By the way, we'll jump straight to here if we were called
+        //with a pre-made thread object (this is so resumed coroutines
+        //keep executing rather than always asking for input)
+        run_the_thing:
+        
         //For some unknown reason pcallk doesn't actually run the
         //code in a protected context when you give it a continuation
-        //function
+        //function, so we're using lua_resume instead.
         //int rc = lua_pcallk(th,0,0,0,0,&lua_repl);
         rc = lua_resume(th, 0, 0, &numresults);
         
-        if (rc == LUA_YIELD) break; //Allow sim to continue on yields, and also
-                                    //don't take thread out of registry
-        else if (rc != LUA_OK) {
+        if (rc == LUA_YIELD) {
+            if (numresults == 0) {
+                //Allow sim to continue on normal yields, and don't
+                //take thread out of registry 
+                return 0;
+            } else {
+                //Any nonzero number of yielded values tells us that
+                //lua_leave_repl was invoked. For now, we will treat
+                //this the same as normal yields, but maybe in the
+                //future we'll do something different
+                return 0;
+            }
+        } else if (rc != LUA_OK) {
             fprintf(stderr, "%s\n", lua_tostring(th, -1));
             lua_pop(th,1); //pop error message
+
+            //Unfortunately for us, unlike pcallk, if an error
+            //occurs inside lua_resume our thread is marked as
+            //a dead coroutine and we have no choice but to make
+            //a new thread. There must be a better way...
+            deregister_thread(th);
+            lua_settop(th,0); //Not sure if needed, but clear thread's stack
+            
+            th = lua_newthread(L);
+            register_thread(th);
+            lua_pop(L, 1);
         }
-        
-        //Remove thread from registry
-        lua_settop(th,0);
-        lua_pushlightuserdata(L, th);
-        lua_pushnil(L);
-        lua_rawset(L, LUA_REGISTRYINDEX);
-        th = NULL;
     }
+        
+    //Remove thread from registry
+    deregister_thread(th);
+    lua_settop(th,0); //Not sure if needed, but clear thread's stack
 
     return 0;
 }
 
-static int hello_calltf([[maybe_unused]] char*user_data) {
-    lua_repl(g_L);
+int lua_leave_repl(lua_State *L) {
+    //cerr << "yielding " << L << endl;
+    
+    lua_yieldk(L, 0, 0, &no_more_questions_your_honour);
+
+    puts("should never get here...");
+    //Can never get here
     return 0;
 }
 
@@ -212,6 +256,7 @@ int vpi_get_all(lua_State *L) {
 
 PLI_INT32 resume_lua_after_wait(s_cb_data *cbdat) {
     lua_State *L = (lua_State *) cbdat->user_data;
+    //cerr << "resuming " << L << endl;
 
     lua_pushthread(L);
     return lua_repl(L);
@@ -252,12 +297,8 @@ int vpi_wait(lua_State *L) {
     cbdat.obj = el;
     
     vpi_register_cb(&cbdat);
-
-    lua_yieldk(L, 0, 0, &no_more_questions_your_honour);
-
-    puts("should never get here...");
-    //Can never get here
-    return 0;
+    
+    return lua_leave_repl(L); //Should never return
 }
 
 int vpi_get_value_wrapper(lua_State *L) {
@@ -328,208 +369,211 @@ int vpi_put_value_wrapper(lua_State *L) {
     return 0;
 }
 
-void hello_register()
-{
+//Load the VPI table into the given lua_State
+void luaopen_vpi(lua_State *L) {
+    lua_checkstack(L, 5);
+
+    lua_register(L, "repl", lua_repl);
+    lua_register(L, "yield", lua_leave_repl);
+    
+    lua_newtable(L);
+    
+    #define pushconst(thing) \
+        lua_pushlstring(L, #thing, sizeof(#thing)-1); \
+        lua_pushinteger(L, vpi##thing); \
+        lua_settable(L, -3);
+    
+    //Don't worry... I paste from vpi_user.h and used regex
+    //find-replace
+    pushconst(Constant);
+    pushconst(Function);
+    pushconst(IntegerVar);
+    pushconst(Iterator);
+    pushconst(Memory);
+    pushconst(MemoryWord);
+    pushconst(ModPath);
+    pushconst(Module);
+    pushconst(NamedBegin);
+    pushconst(NamedEvent);
+    pushconst(NamedFork);
+    pushconst(Net);
+    pushconst(NetBit);
+    pushconst(Parameter);
+    pushconst(PartSelect);
+    pushconst(PathTerm);
+    pushconst(Port);
+    pushconst(RealVar);
+    pushconst(Reg);
+    pushconst(RegBit);
+    pushconst(SysFuncCall);
+    pushconst(SysTaskCall);
+    pushconst(Task);
+    pushconst(TimeVar);
+    pushconst(UdpDefn);
+    pushconst(UserSystf);
+    pushconst(NetArray);
+    pushconst(Index);
+    pushconst(LeftRange);
+    pushconst(Parent);
+    pushconst(RightRange);
+    pushconst(Scope);
+    pushconst(SysTfCall);
+    pushconst(Argument);
+    pushconst(InternalScope);
+    pushconst(ModPathIn);
+    pushconst(ModPathOut);
+    pushconst(Variables);
+    pushconst(Expr);
+    pushconst(Callback);
+    pushconst(RegArray);
+    pushconst(GenScope);
+    pushconst(Undefined);
+    pushconst(Type);
+    pushconst(Name);
+    pushconst(FullName);
+    pushconst(Size);
+    pushconst(File);
+    pushconst(LineNo);
+    pushconst(TopModule);
+    pushconst(CellInstance);
+    pushconst(DefName);
+    pushconst(TimeUnit);
+    pushconst(TimePrecision);
+    pushconst(DefFile);
+    pushconst(DefLineNo);
+    pushconst(Scalar);
+    pushconst(Vector);
+    pushconst(Direction);
+    pushconst(Input);
+    pushconst(Output);
+    pushconst(Inout);
+    pushconst(MixedIO);
+    pushconst(NoDirection);
+    pushconst(NetType);
+    pushconst(Wire);
+    pushconst(Wand);
+    pushconst(Wor);
+    pushconst(Tri);
+    pushconst(Tri0);
+    pushconst(Tri1);
+    pushconst(TriReg);
+    pushconst(TriAnd);
+    pushconst(TriOr);
+    pushconst(Supply1);
+    pushconst(Supply0);
+    pushconst(Array);
+    pushconst(PortIndex);
+    pushconst(Edge);
+    pushconst(NoEdge);
+    pushconst(Edge01);
+    pushconst(Edge10);
+    pushconst(Edge0x);
+    pushconst(Edgex1);
+    pushconst(Edge1x);
+    pushconst(Edgex0);
+    pushconst(Posedge);
+    pushconst(Negedge);
+    pushconst(AnyEdge);
+    pushconst(ConstType);
+    pushconst(DecConst);
+    pushconst(RealConst);
+    pushconst(BinaryConst);
+    pushconst(OctConst);
+    pushconst(HexConst);
+    pushconst(StringConst);
+    pushconst(FuncType);
+    pushconst(IntFunc);
+    pushconst(RealFunc);
+    pushconst(TimeFunc);
+    pushconst(SizedFunc);
+    pushconst(SizedSignedFunc);
+    pushconst(SysFuncType);
+    pushconst(SysFuncInt);
+    pushconst(SysFuncReal);
+    pushconst(SysFuncTime);
+    pushconst(SysFuncSized);
+    pushconst(UserDefn);
+    pushconst(Automatic);
+    pushconst(ConstantSelect);
+    pushconst(Signed);
+    pushconst(LocalParam);
+    pushconst(BinStrVal);
+    pushconst(OctStrVal);
+    pushconst(DecStrVal);
+    pushconst(HexStrVal);
+    pushconst(ScalarVal);
+    pushconst(IntVal);
+    pushconst(RealVal);
+    pushconst(StringVal);
+    pushconst(VectorVal);
+    pushconst(StrengthVal);
+    pushconst(TimeVal);
+    pushconst(ObjTypeVal);
+    pushconst(SuppressVal);
+    #undef pushconst
+
+    #define pushcfn(name,fn) \
+        lua_pushlstring(L, name, sizeof(name) - 1); \
+        lua_pushcfunction(L, &fn); \
+        lua_settable(L, -3);
+    
+    pushcfn("handle", vpi_handle_wrapper);
+    pushcfn("handle_by_name", vpi_handle_by_name_wrapper);
+    pushcfn("get", vpi_get_wrapper);
+    pushcfn("get_str", vpi_get_str_wrapper);
+    pushcfn("get_all", vpi_get_all);
+    pushcfn("wait", vpi_wait);
+    pushcfn("get_value", vpi_get_value_wrapper);
+    pushcfn("put_value", vpi_put_value_wrapper);
+    #undef pushcfn
+    
+    luaL_newmetatable(L, "vpiHandle");
+    lua_pushlstring(L, "__index", sizeof("__index") -1);
+    lua_pushvalue(L, -3); //Copy VPI table to top of stack
+    lua_settable(L, -3);  //Set __index for the metatable
+
+    lua_pushlstring(L, "__tostring", sizeof("__tostring") -1);
+    lua_pushcfunction(L, &vpi_handle_to_string);
+    lua_settable(L,-3); //Set __tostring for the metatatable
+
+    lua_pop(L, 1); //Pop the metatable (safe, because the metatable
+                   //is saved in the registry)
+    
+    lua_setglobal(L, "vpi"); //Finally, save the table of VPI functions
+                             //to a global var
+}
+
+static int lua_repl_calltf([[maybe_unused]] char*user_data) {
+    lua_State *L = luaL_newstate();
+    if (!L) {
+        cerr << "oops" << el;
+        vpi_control(vpiFinish, -1);
+        return -1;
+    }
+
+    luaL_openlibs(L);
+    luaopen_vpi(L);
+    lua_repl(L);
+    return 0;
+}
+
+static int lua_repl_compiletf([[maybe_unused]] char*user_data) {
+    return 0;
+}
+
+void lua_repl_task_register() {
     s_vpi_systf_data tf_data;
 
     tf_data.type      = vpiSysTask;
-    tf_data.tfname    = "$hello";
-    tf_data.calltf    = hello_calltf;
-    tf_data.compiletf = hello_compiletf;
+    tf_data.tfname    = "$lua_repl";
+    tf_data.calltf    = lua_repl_calltf;
+    tf_data.compiletf = lua_repl_compiletf;
     tf_data.sizetf    = 0;
     tf_data.user_data = 0;
     vpi_register_systf(&tf_data);
-
-    
-    g_L = luaL_newstate();
-    if (!g_L) {
-        cerr << "oops" << el;
-        vpi_control(vpiFinish, -1);
-        return;
-    }
-
-    luaL_openlibs(g_L);
-
-    lua_newtable(g_L);
-    { //For code folding
-    #define pushstr(str) lua_pushlstring(g_L, str, sizeof(str) - 1);
-    #define mkthing(thing) lua_pushlstring(g_L, #thing, sizeof(#thing)-1); lua_pushinteger(g_L, vpi##thing); lua_settable(g_L, -3);
-    //Don't worry... I paste from vpi_user.h and used regex
-    //find-replace
-    mkthing(Constant);
-    mkthing(Function);
-    mkthing(IntegerVar);
-    mkthing(Iterator);
-    mkthing(Memory);
-    mkthing(MemoryWord);
-    mkthing(ModPath);
-    mkthing(Module);
-    mkthing(NamedBegin);
-    mkthing(NamedEvent);
-    mkthing(NamedFork);
-    mkthing(Net);
-    mkthing(NetBit);
-    mkthing(Parameter);
-    mkthing(PartSelect);
-    mkthing(PathTerm);
-    mkthing(Port);
-    mkthing(RealVar);
-    mkthing(Reg);
-    mkthing(RegBit);
-    mkthing(SysFuncCall);
-    mkthing(SysTaskCall);
-    mkthing(Task);
-    mkthing(TimeVar);
-    mkthing(UdpDefn);
-    mkthing(UserSystf);
-    mkthing(NetArray);
-    mkthing(Index);
-    mkthing(LeftRange);
-    mkthing(Parent);
-    mkthing(RightRange);
-    mkthing(Scope);
-    mkthing(SysTfCall);
-    mkthing(Argument);
-    mkthing(InternalScope);
-    mkthing(ModPathIn);
-    mkthing(ModPathOut);
-    mkthing(Variables);
-    mkthing(Expr);
-    mkthing(Callback);
-    mkthing(RegArray);
-    mkthing(GenScope);
-    mkthing(Undefined);
-    mkthing(Type);
-    mkthing(Name);
-    mkthing(FullName);
-    mkthing(Size);
-    mkthing(File);
-    mkthing(LineNo);
-    mkthing(TopModule);
-    mkthing(CellInstance);
-    mkthing(DefName);
-    mkthing(TimeUnit);
-    mkthing(TimePrecision);
-    mkthing(DefFile);
-    mkthing(DefLineNo);
-    mkthing(Scalar);
-    mkthing(Vector);
-    mkthing(Direction);
-    mkthing(Input);
-    mkthing(Output);
-    mkthing(Inout);
-    mkthing(MixedIO);
-    mkthing(NoDirection);
-    mkthing(NetType);
-    mkthing(Wire);
-    mkthing(Wand);
-    mkthing(Wor);
-    mkthing(Tri);
-    mkthing(Tri0);
-    mkthing(Tri1);
-    mkthing(TriReg);
-    mkthing(TriAnd);
-    mkthing(TriOr);
-    mkthing(Supply1);
-    mkthing(Supply0);
-    mkthing(Array);
-    mkthing(PortIndex);
-    mkthing(Edge);
-    mkthing(NoEdge);
-    mkthing(Edge01);
-    mkthing(Edge10);
-    mkthing(Edge0x);
-    mkthing(Edgex1);
-    mkthing(Edge1x);
-    mkthing(Edgex0);
-    mkthing(Posedge);
-    mkthing(Negedge);
-    mkthing(AnyEdge);
-    mkthing(ConstType);
-    mkthing(DecConst);
-    mkthing(RealConst);
-    mkthing(BinaryConst);
-    mkthing(OctConst);
-    mkthing(HexConst);
-    mkthing(StringConst);
-    mkthing(FuncType);
-    mkthing(IntFunc);
-    mkthing(RealFunc);
-    mkthing(TimeFunc);
-    mkthing(SizedFunc);
-    mkthing(SizedSignedFunc);
-    mkthing(SysFuncType);
-    mkthing(SysFuncInt);
-    mkthing(SysFuncReal);
-    mkthing(SysFuncTime);
-    mkthing(SysFuncSized);
-    mkthing(UserDefn);
-    mkthing(Automatic);
-    mkthing(ConstantSelect);
-    mkthing(Signed);
-    mkthing(LocalParam);
-    mkthing(BinStrVal);
-    mkthing(OctStrVal);
-    mkthing(DecStrVal);
-    mkthing(HexStrVal);
-    mkthing(ScalarVal);
-    mkthing(IntVal);
-    mkthing(RealVal);
-    mkthing(StringVal);
-    mkthing(VectorVal);
-    mkthing(StrengthVal);
-    mkthing(TimeVal);
-    mkthing(ObjTypeVal);
-    mkthing(SuppressVal);
-    }
-
-    pushstr("handle");
-    lua_pushcfunction(g_L, &vpi_handle_wrapper);
-    lua_settable(g_L, -3);
-    
-    pushstr("handle_by_name");
-    lua_pushcfunction(g_L, &vpi_handle_by_name_wrapper);
-    lua_settable(g_L, -3);
-    
-    pushstr("get");
-    lua_pushcfunction(g_L, &vpi_get_wrapper);
-    lua_settable(g_L, -3);
-    
-    pushstr("get_str");
-    lua_pushcfunction(g_L, &vpi_get_str_wrapper);
-    lua_settable(g_L, -3);
-    
-    pushstr("get_all");
-    lua_pushcfunction(g_L, &vpi_get_all);
-    lua_settable(g_L, -3);
-    
-    pushstr("wait");
-    lua_pushcfunction(g_L, &vpi_wait);
-    lua_settable(g_L, -3);
-    
-    pushstr("get_value");
-    lua_pushcfunction(g_L, &vpi_get_value_wrapper);
-    lua_settable(g_L, -3);
-    
-    pushstr("put_value");
-    lua_pushcfunction(g_L, &vpi_put_value_wrapper);
-    lua_settable(g_L, -3);
-    
-    luaL_newmetatable(g_L, "vpiHandle");
-    pushstr("__index");
-    lua_pushvalue(g_L, -3);
-    lua_settable(g_L, -3);
-
-    pushstr("__tostring");
-    lua_pushcfunction(g_L, &vpi_handle_to_string);
-    lua_settable(g_L,-3);
-
-    lua_pop(g_L, 1);
-    
-    lua_setglobal(g_L, "vpi");
 }
 
 void (*vlog_startup_routines[])() = {
-    hello_register,
+    lua_repl_task_register,
     0
 };
