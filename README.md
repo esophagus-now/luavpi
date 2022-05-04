@@ -76,7 +76,7 @@ _This is subject to change since I'm still bringing up this project in the first
 
 All functionality is made available in the global `vpi` table. VPI handle objects in Lua have a metatable with a `__tostring` pretty-printer. The `h:get_value(type)` shorthand shown in the quickstart is possible because the `__index` field of the VPI handle metatable points to the `vpi` table.
 
-Most VPI constants are available in the `vpi` table. If the constant was called `vpiXyzAbc` in C code, then it should be available in Lua with `vpi.XyzAbc`. 
+Most VPI constants are available in the `vpi` table. If the constant was called `vpiXyzAbc` in C code, then it should be available in Lua with `vpi.XyzAbc`. The exception is the callback reasons; something called `cbXyzAbc` will be availabled as `vpi.cbXyzAbc` in Lua.
 
 Likewise, a subset of the available VPI functions (listed below) can also be found in this table; if the function is called `vpi_xyz_abc` in C then it would be available in Lua as `vpi.xyz_abc`. Keep in mind that I always place the vpiHandle argument as the first argument, even when this contradicts the VPI spec.
 
@@ -88,4 +88,10 @@ The available functions are:
  - `vpi.wait(delay)`. Blocks current coroutine until `delay` simulation time units have elapsed. This uses `cbAfterDelay` behind the scenes so that the coroutine is automatically resumed at the right time.
  - `vpi.get_all(h, type)`. Behind the scenes this uses `vpi_iterate` and `vpi_scan` to fill an array with handles to all instances of `type` in `h`. This array is returned as a Lua table (and it can be empty)
  - `repl()` to drop to an interactive prompt
- - `yield()` to yield current thread. This allows the simulation to continue
+ - `yield()` to yield the current thread. This allows the simulation to continue. If you have pending callbacks (see below) the thread will continue as if `yield()` returned when the callback is triggered (so I guess it's not really a "callback", more of a "resumeback" :smile:)
+ - `vpi.register_cb(cbdat)`. Its argument is a table with the following fields:
+    - `reason`: Currently, luavpi only supports `vpi.cbValueChange`
+    - `obj`: A valid vpi handle.
+
+   This returns a handle to the callback. To actually wait for the callback to be triggered, simply yield the current thread with `yield()`; when the simulation event occurs, the thread will simply resume. FIXME: if you have multiple pending callbacks, there is currently NO WAY to know which one was triggered.
+- `vpi.remove_cb(h)` deschedules the callback saved in handle `h`. The only handles you shold pass in are handles that were once returned by `vpi.register_cb` (note: the VPI spec states that it is safe to remove a callback even if it was already triggered). The handle becomes invalid and should no longer be used.

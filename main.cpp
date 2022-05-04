@@ -68,7 +68,6 @@ int lua_repl(lua_State *L) {
     }
     
     while (printf("> "), fgets(buff, sizeof(buff), stdin) != NULL) {
-
         //Try compiling the user's string
         error = luaL_loadbuffer(th, buff, strlen(buff), "stdin");
         if (error) {
@@ -257,7 +256,7 @@ int vpi_get_all(lua_State *L) {
 PLI_INT32 resume_lua_after_wait(s_cb_data *cbdat) {
     lua_State *L = (lua_State *) cbdat->user_data;
     //cerr << "resuming " << L << endl;
-
+    
     lua_pushthread(L);
     return lua_repl(L);
 }
@@ -296,7 +295,8 @@ int vpi_wait(lua_State *L) {
 
     cbdat.obj = el;
     
-    vpi_register_cb(&cbdat);
+    vpiHandle cb = vpi_register_cb(&cbdat);
+    vpi_free_object(cb); //Don't need this
     
     return lua_leave_repl(L); //Should never return
 }
@@ -365,6 +365,86 @@ int vpi_put_value_wrapper(lua_State *L) {
         //Try to prevent memory leaks
         vpi_free_object(ev);
     }
+
+    return 0;
+}
+
+//Main idea: registering a callback does not block the thread.
+//To wait for the callback to occur, call yield()
+//FIXME: figure out how to get the yield() to return some value
+//to help the thread figure out what event just happened
+int vpi_register_cb_wrapper(lua_State *L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    #define pushstr(s) lua_pushlstring(L, s, sizeof(s)-1);
+    pushstr("reason");
+    lua_gettable(L, 1);
+    
+    if (lua_isnil(L,-1)) {
+        luaL_error(L, "Error, reason field is missing");
+    } 
+    int isnum;
+    int reason = lua_tointegerx(L, -1, &isnum);
+    if (!isnum) {
+        luaL_error(L, "Error, reason must be an integer");
+    }
+
+    s_cb_data cbdat;
+    vpiHandle cb = NULL;
+    s_vpi_time tm;
+    tm.type = vpiSuppressTime; //TODO? Use this?
+    s_vpi_value val;
+    val.format = vpiSuppressVal; //TODO? Use this? For now it's good enough
+                                 //that the Lua code can call get_value after
+    cbdat.reason = reason;
+    cbdat.time = &tm;
+    cbdat.value = &val;
+    cbdat.cb_rtn = resume_lua_after_wait; //FIXME: figure out how to get yield() 
+                                          //to return cb info
+    cbdat.user_data = (PLI_BYTE8*) L;
+    
+    switch (reason) {
+    case cbValueChange:
+    case cbStmt: 
+    case cbForce: 
+    case cbRelease:{
+        pushstr("obj");
+        lua_gettable(L,1);
+        if (lua_isnil(L,-1)) {
+            luaL_error(L, "Error, simulation event cb requires obj field");
+        }
+        vpiHandle obj = (vpiHandle) luaL_testudata(L,-1,"vpiHandle");
+        if (obj == NULL) {
+            luaL_error(L, "Error, invalid vpi handle in obj field");
+        }
+        cbdat.obj = obj;
+        cb = vpi_register_cb(&cbdat);
+        break;
+    }
+    default:
+        luaL_error(L, "Error, unsupporred callback reason");
+    }
+    #undef pushstr
+
+    assert(cb != NULL);
+    lua_pushlightuserdata(L, cb);
+    luaL_getmetatable(L, "vpiHandle");
+    lua_setmetatable(L,-2);
+    
+    return 1; 
+}
+
+int vpi_remove_cb_wrapper(lua_State *L) {
+    vpiHandle h = (vpiHandle) luaL_checkudata(L,1,"vpiHandle");
+
+    vpi_remove_cb(h);
+
+    return 0;
+}
+
+int vpiHandle_gc(lua_State *L) {
+    vpiHandle h = (vpiHandle) luaL_checkudata(L,1,"vpiHandle");
+
+    vpi_free_object(h);
 
     return 0;
 }
@@ -511,6 +591,44 @@ void luaopen_vpi(lua_State *L) {
     pushconst(ObjTypeVal);
     pushconst(SuppressVal);
     #undef pushconst
+    
+    #define pushconst(thing) \
+        lua_pushlstring(L, #thing, sizeof(#thing)-1); \
+        lua_pushinteger(L, thing); \
+        lua_settable(L, -3);
+    pushconst(cbValueChange);
+    pushconst(cbStmt);
+    pushconst(cbForce);
+    pushconst(cbRelease);
+    pushconst(cbAtStartOfSimTime);
+    pushconst(cbReadWriteSynch);
+    pushconst(cbReadOnlySynch);
+    pushconst(cbNextSimTime);
+    pushconst(cbAfterDelay);
+    pushconst(cbEndOfCompile);
+    pushconst(cbStartOfSimulation);
+    pushconst(cbEndOfSimulation);
+    pushconst(cbError);
+    pushconst(cbTchkViolation);
+    pushconst(cbStartOfSave);
+    pushconst(cbEndOfSave);
+    pushconst(cbStartOfRestart);
+    pushconst(cbEndOfRestart);
+    pushconst(cbStartOfReset);
+    pushconst(cbEndOfReset);
+    pushconst(cbEnterInteractive);
+    pushconst(cbExitInteractive);
+    pushconst(cbInteractiveScopeChange);
+    pushconst(cbUnresolvedSystf);
+    //Unsupported by Icarus Verilog
+    /*
+    pushconst(cbAssign);
+    pushconst(cbDeassign);
+    pushconst(cbDisable);
+    pushconst(cbPLIError);
+    pushconst(cbSignal);
+    */
+    #undef pushconst
 
     #define pushcfn(name,fn) \
         lua_pushlstring(L, name, sizeof(name) - 1); \
@@ -525,6 +643,8 @@ void luaopen_vpi(lua_State *L) {
     pushcfn("wait", vpi_wait);
     pushcfn("get_value", vpi_get_value_wrapper);
     pushcfn("put_value", vpi_put_value_wrapper);
+    pushcfn("register_cb", vpi_register_cb_wrapper);
+    pushcfn("remove_cb", vpi_remove_cb_wrapper);
     #undef pushcfn
     
     luaL_newmetatable(L, "vpiHandle");
@@ -536,6 +656,10 @@ void luaopen_vpi(lua_State *L) {
     lua_pushcfunction(L, &vpi_handle_to_string);
     lua_settable(L,-3); //Set __tostring for the metatatable
 
+    lua_pushlstring(L, "__gc", sizeof("__gc") -1);
+    lua_pushcfunction(L, &vpiHandle_gc);
+    lua_settable(L,-3); //Set __gc for the metatatable
+    
     lua_pop(L, 1); //Pop the metatable (safe, because the metatable
                    //is saved in the registry)
     
@@ -550,6 +674,8 @@ static int lua_repl_calltf([[maybe_unused]] char*user_data) {
         vpi_control(vpiFinish, -1);
         return -1;
     }
+
+    lua_pushstring(L, "This is a test");
 
     luaL_openlibs(L);
     luaopen_vpi(L);

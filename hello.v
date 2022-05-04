@@ -22,6 +22,10 @@ endmodule
 
 module tb;
 
+reg thing = 0;
+
+always #2 thing = ~thing;
+    
 pipe_stage DUT();
 
 event my_ev;
