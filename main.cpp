@@ -14,10 +14,20 @@ int lua_repl();
 
 //Continuation function that just returns the ctx number
 //(so that we can indicate number of return values)
+//HACK? This function pops the thread object that had to
+//be at the top of the stack when we called lua_resume 
+//(why doesn't lua_resume pop this?) then returns lua_gettop(L), 
+//meaning that anything on the stack (except the thread object)
+//is a return value for this yield call
 int no_more_questions_your_honour(
-    [[maybe_unused]] lua_State *L, [[maybe_unused]] int status, lua_KContext ctx
+    [[maybe_unused]] lua_State *L, 
+    [[maybe_unused]] int status, 
+    [[maybe_unused]] lua_KContext ctx
 ) {
-    return ctx;
+    lua_State *th = lua_tothread(L,-1);
+    assert(th && "No callable at top of stack; this is probably wrong");
+    lua_pop(L,1);
+    return lua_gettop(L);
 }
 
 void register_thread(lua_State *L, bool deregister=false) {
@@ -86,7 +96,7 @@ int lua_repl(lua_State *L) {
         //code in a protected context when you give it a continuation
         //function, so we're using lua_resume instead.
         //int rc = lua_pcallk(th,0,0,0,0,&lua_repl);
-        rc = lua_resume(th, 0, 0, &numresults);
+        rc = lua_resume(th, NULL, 0, &numresults);
         
         if (rc == LUA_YIELD) {
             if (numresults == 0) {
@@ -114,6 +124,9 @@ int lua_repl(lua_State *L) {
             th = lua_newthread(L);
             register_thread(th);
             lua_pop(L, 1);
+        } else {
+            //Discard all the returned results
+            lua_pop(th, numresults);
         }
     }
         
@@ -257,6 +270,7 @@ PLI_INT32 resume_lua_after_wait(s_cb_data *cbdat) {
     lua_State *L = (lua_State *) cbdat->user_data;
     //cerr << "resuming " << L << endl;
     
+    lua_pushstring(L, "hello");
     lua_pushthread(L);
     return lua_repl(L);
 }
@@ -439,6 +453,26 @@ int vpi_remove_cb_wrapper(lua_State *L) {
     vpi_remove_cb(h);
 
     return 0;
+}
+
+int vpi_get_time_wrapper(lua_State *L) {
+    vpiHandle h;
+    if (lua_gettop(L) == 0 || lua_isnil(L, 1)) h = NULL;
+    else h = (vpiHandle) luaL_checkudata(L,1,"vpiHandle");
+
+    //TODO? Icarus Verilog only supports vpiSimTime, so no real
+    //point dealing with a function parameter to set the time
+    //format. For now just return the sim time as a lui_Integer
+
+    s_vpi_time tm;
+    tm.type = vpiSimTime;
+
+    vpi_get_time(h, &tm);
+
+    lua_Integer ret = ((lua_Integer)tm.high << 32) | tm.low;
+    lua_pushinteger(L, ret);
+    
+    return 1;
 }
 
 int vpiHandle_gc(lua_State *L) {
@@ -645,6 +679,7 @@ void luaopen_vpi(lua_State *L) {
     pushcfn("put_value", vpi_put_value_wrapper);
     pushcfn("register_cb", vpi_register_cb_wrapper);
     pushcfn("remove_cb", vpi_remove_cb_wrapper);
+    pushcfn("get_time", vpi_get_time_wrapper);
     #undef pushcfn
     
     luaL_newmetatable(L, "vpiHandle");

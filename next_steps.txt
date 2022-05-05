@@ -1,7 +1,19 @@
 [ ] Add prompt string argument to repl() call in Lua
 [ ] Steal nicer repl features from standalone lua interpreter
-[ ] Figure out how to get current sim time
-[ ] Add value change and RO sync callbacks
+[x] Figure out how to get current sim time
+[/] Add value change and RO sync callbacks
+[/] Add some way for user to know which cb was triggered
+    - I have a proof-of-concept working that shows I can return
+      values from vpi.wait() or yield()
+      - Probably I should put that s_cb_data that VPI gives to
+        to your cb function into a lua table and return that
+      - The alternative is that the user should supply a tag
+        for every callback and we would return that
+[ ] Let lua code add a "user data" field to the cb data table that
+    it passes to vpi.register_cb(). We'll be forced to save this
+    value into the registry then put the registry index into the
+    the real s_cb_data struct we make in C (then fish the user's
+    lua value back out at the other end)
 [ ] Do a better job of dealing with vpi_put_value
     - It might be enough to just add support for string formats
     - Should also supply a release function to drop forces
@@ -14,9 +26,21 @@
        system functions defined by the verilog standard to
        do exactly this!
 [ ] Timonerie support (https://github.com/esophagus-now/timonerie)
-    -> This shouldn't be too difficult
+    -> This shouldn't be too difficult... the big headache is dealing
+       with either a dependency on luasocket, luaposix, or trying to
+       to get this code compiling with winsock (yuck)
 [ ] Keep wrapping more VPI functions
     - vpi_handle_by_index, vpi_handle_by_multi_index
     - vpi_get_vlog_info
     - vpi_get_systf_info
+    - vpi_control
     - etc.
+[ ] Add documentation for compiling in all the well-known simulators
+    - Icarus Verilog (yeah, people can try to to read my build scripts... 
+      but nice docs would be better)
+    - Verilator (annoyingly, you have to mark things `verilator public` 
+      if you want to access them in VPI... yuck!)
+    - VCS
+    - Modelsim
+    - There are other verilog simulators out there, but I don't have 
+      access to them
