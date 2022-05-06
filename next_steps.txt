@@ -44,3 +44,5 @@
     - Modelsim
     - There are other verilog simulators out there, but I don't have 
       access to them
+[ ] Add system task where verilog can just run a snippet of lua code
+    (instead of always dropping to a repl)

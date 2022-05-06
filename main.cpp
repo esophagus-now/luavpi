@@ -20,9 +20,8 @@ int lua_repl();
 //meaning that anything on the stack (except the thread object)
 //is a return value for this yield call
 int no_more_questions_your_honour(
-    [[maybe_unused]] lua_State *L, 
-    [[maybe_unused]] int status, 
-    [[maybe_unused]] lua_KContext ctx
+    lua_State *L, 
+    [[maybe_unused]] int status, [[maybe_unused]] lua_KContext ctx
 ) {
     lua_State *th = lua_tothread(L,-1);
     assert(th && "No callable at top of stack; this is probably wrong");
@@ -365,20 +364,56 @@ int vpi_get_value_wrapper(lua_State *L) {
     return 1;
 }
 
-//TODO: handle the other value types
+//Supports plain old integers, or strings. The function will
+//check the prefix of the string to determine whether to use
+//binary, decimal, octal, or hexadecimal. ASCII not supported.
 int vpi_put_value_wrapper(lua_State *L) {
     vpiHandle h = (vpiHandle) luaL_checkudata(L,1,"vpiHandle");
-    lua_Integer val_in = luaL_checkinteger(L,2);
+    int tp = lua_type(L,2);
+    if (tp == LUA_TNIL) {
+        luaL_error(L, "Cannot put a nil value");
+    }
 
     s_vpi_value val;
-    val.format = vpiIntVal;
-    val.value.integer = (val_in & 0xFFFFFFFF);
+    
+    if (tp == LUA_TNUMBER) {
+        lua_Integer val_in = luaL_checkinteger(L,2);
+        val.format = vpiIntVal;
+        val.value.integer = (val_in & 0xFFFFFFFF);
+    } else if (tp == LUA_TSTRING) {
+        char const *str = lua_tostring(L,2);
+        //FIXME? At this point, the function assumes the
+        //given string is valid. We'll let VPI throw 
+        //errors if it's bad
+        int what_to_put;
+        if (str[0] == '0') {
+            if (str[1] == 'x') {
+                what_to_put = vpiHexStrVal;
+                str = str + 2;
+            } else if (str[1] == 'b') {
+                what_to_put = vpiBinStrVal;
+                str = str + 2;
+            } else {
+                what_to_put = vpiOctStrVal; //Who even uses octal?
+                str = str + 1;
+            }
+        } else {
+            what_to_put = vpiDecStrVal;
+        }
+
+        val.format = what_to_put;
+        val.value.str = const_cast<char*>(str); //No other option
+    } else {
+        luaL_error(
+            L,
+            "put_value does not accept inputs of type %s", 
+            lua_typename(L,tp)
+        );
+    }
 
     vpiHandle ev = vpi_put_value(h, &val, NULL, vpiForceFlag);
-    if (ev) {
-        //Try to prevent memory leaks
-        vpi_free_object(ev);
-    }
+    //Try to prevent memory leaks
+    if (ev) vpi_free_object(ev);
 
     return 0;
 }
@@ -472,6 +507,26 @@ int vpi_get_time_wrapper(lua_State *L) {
     lua_Integer ret = ((lua_Integer)tm.high << 32) | tm.low;
     lua_pushinteger(L, ret);
     
+    return 1;
+}
+
+int vpi_handle_by_index_wrapper(lua_State *L) {
+    vpiHandle h;
+    if (lua_isnil(L, 1)) h = NULL;
+    else h = (vpiHandle) luaL_checkudata(L,1,"vpiHandle");
+
+    PLI_INT32 index = luaL_checkinteger(L,2);
+
+    vpiHandle ret = vpi_handle_by_index(h, index);
+
+    if (ret == NULL) {
+        lua_pushnil(L);
+    } else {
+        lua_pushlightuserdata(L, ret);
+        luaL_getmetatable(L, "vpiHandle");
+        lua_setmetatable(L, -2);
+    }
+
     return 1;
 }
 
@@ -680,6 +735,7 @@ void luaopen_vpi(lua_State *L) {
     pushcfn("register_cb", vpi_register_cb_wrapper);
     pushcfn("remove_cb", vpi_remove_cb_wrapper);
     pushcfn("get_time", vpi_get_time_wrapper);
+    pushcfn("handle_by_index", vpi_handle_by_index_wrapper);
     #undef pushcfn
     
     luaL_newmetatable(L, "vpiHandle");
