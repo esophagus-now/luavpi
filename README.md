@@ -1,7 +1,7 @@
 ### luavpi
 ---
 
-Project started on May 31 / 2022
+Project started on May 1 / 2022
 
 I wanted an easy way to create/debug verilog simulations. Because Lua is (probably) my favourite programming language, and because it is so easy to add it as an extension language, it made sense to try this out.
 
