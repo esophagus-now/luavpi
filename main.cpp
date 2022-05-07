@@ -439,8 +439,20 @@ int vpi_register_cb_wrapper(lua_State *L) {
 
     s_cb_data cbdat;
     vpiHandle cb = NULL;
+    
+    //The version of iverilog I'm using must have been built
+    //before this fix: https://github.com/steveicarus/iverilog/commit/580170d9745a0883b69c8d63d21553d9ad874698
+    //I will put some arbitrary valid vpi handle in obj as a workaround
+    vpiHandle it = vpi_iterate(vpiModule, NULL);
+    vpiHandle el = vpi_scan(it);
+    assert(el != NULL);
+    if (it != NULL) vpi_free_object(it);
+    cbdat.obj = el;
+    
     s_vpi_time tm;
     tm.type = vpiSuppressTime; //TODO? Use this?
+    tm.high = 0;
+    tm.low = 0;
     s_vpi_value val;
     val.format = vpiSuppressVal; //TODO? Use this? For now it's good enough
                                  //that the Lua code can call get_value after
@@ -450,7 +462,8 @@ int vpi_register_cb_wrapper(lua_State *L) {
     cbdat.cb_rtn = resume_lua_after_wait; //FIXME: figure out how to get yield() 
                                           //to return cb info
     cbdat.user_data = (PLI_BYTE8*) L;
-    
+
+    //Small amount of duplicated code. Whatever.
     switch (reason) {
     case cbValueChange:
     case cbStmt: 
@@ -466,7 +479,28 @@ int vpi_register_cb_wrapper(lua_State *L) {
             luaL_error(L, "Error, invalid vpi handle in obj field");
         }
         cbdat.obj = obj;
-        cb = vpi_register_cb(&cbdat);
+        //Could pop the obj but lua will do it for us anyway
+        break;
+    }
+    case cbAtStartOfSimTime:
+    //case cbNBASynch: //Icarus Verilog doesn't have this???
+    case cbReadWriteSynch:
+    case cbAtEndOfSimTime:
+    case cbReadOnlySynch:
+    case cbAfterDelay: {
+        pushstr("time");
+        lua_gettable(L,1);
+        if (!lua_isnil(L,-1)) {
+            if (!lua_isinteger(L,-1)) {
+                luaL_error(L, "Error: callback time delay must be an integer");
+            }
+            lua_Integer delay = lua_tointeger(L,-1);
+            tm.high = (delay >> 32) & 0xFFFFFFFF;
+            tm.low  = (delay      ) & 0xFFFFFFFF;
+        }
+        //Fall-through for the win
+        case cbNextSimTime:
+        tm.type = vpiSimTime; //TODO: allow vpiScaledRealTime
         break;
     }
     default:
@@ -474,6 +508,7 @@ int vpi_register_cb_wrapper(lua_State *L) {
     }
     #undef pushstr
 
+    cb = vpi_register_cb(&cbdat);
     assert(cb != NULL);
     lua_pushlightuserdata(L, cb);
     luaL_getmetatable(L, "vpiHandle");

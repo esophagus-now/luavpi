@@ -9,5 +9,6 @@
         pkgs.rlwrap
         pkgs.vim
         pkgs.verilog
+        pkgs.gtkwave
 	];
 }

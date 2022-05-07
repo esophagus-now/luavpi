@@ -46,3 +46,26 @@
       access to them
 [ ] Add system task where verilog can just run a snippet of lua code
     (instead of always dropping to a repl)
+[ ] FIXME: if a coroutine hooks up a value-change callback but throws
+    an error and dies, the simulation will keep calling it anyway and
+    we get a bunch of "cannot resume dead coroutine" messages
+[ ] Automatically keep track of outstanding callbacks. Too often I've
+    lost the handle to a callback but wish I could delete it. It would
+    also be nice to just see a nice list of active callbacks
+    - One good way would be for the C code to register more than the
+      thread itself in the registry. Right now we I think we do 
+      registry[th] = th just to prevent the thread from being gc'ed.
+      We could instead make the value a table with all the metadata
+      we would like to keep around for this thread, and if we're really
+      good about it, we could do it in such a way that we could let the
+      lua code see its own metadata
+      - I think you can use metatables to make a table read-only, 
+        something like:
+        my_real_table = {some_data = 7}
+        give_this_to_user = {}
+        rotab = {
+            __metatable = "none of your beeswax", 
+            __index= my_real_table, 
+            __newindex= function() error("nope!") end
+        }
+        setmetatable(give_this_to_user, rotab)

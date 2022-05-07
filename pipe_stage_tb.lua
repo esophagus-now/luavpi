@@ -63,7 +63,16 @@ function random_driver(args)
     local m = assert(args.m, "No module given to random driver")
     local l = args.l or 0
     local h = args.h or 1
+    local wait_NBA = {
+        reason = vpi.cbReadWriteSynch
+    }
     while true do
+        -- Need to be careful to only put values as if we
+        -- had written Verilog with non-blocking assignments
+        vpi.register_cb(wait_NBA)
+        -- ugly... need to use different yields for different 
+        -- reasons...
+        yield()
         m:put_value(math.random(l,h))
         coroutine.yield()
     end
@@ -103,7 +112,6 @@ end
 -- Pushes sequential integers into an RTS/RTR interface
 -- and waits for random times in between valid pulses
 function hs_seq_driver(args)
-    assert(false, "This is unfinished")
     local d = assert(args.d, "No handle for data given")
     local v = assert(args.v, "No handle for vld given")
     local r = assert(args.r, "No handle for rdy given")
@@ -113,20 +121,56 @@ function hs_seq_driver(args)
     assert(l>=0, "Lower bound must be nonnegative")
     assert(h>=l, "Invalid low/high bounds given")
 
+    local wait_NBA = {
+        reason = vpi.cbReadWriteSynch
+    }
+    
     -- initialize
     local cnt = 1
-    d:put_value(cnt)
+    d:put_value("0xxx")
     v:put_value(0)
-    local time_until_valid = math.random(l,h)
+    local time_until_vld = math.random(l,h)
 
+    local vld = 0
+    
     while true do
-        if (time_until_valid == 0) then
-            d:put_value(cnt)
-            v:put_value(1)            
-        elseif (time_until_valid > 0) then
-            v:put_value(0)
-            time_until_valid = time_until_valid - 1
+        -- I'm finding myself writing pseudo-verilog
+        -- in Lua... I wanted the API to be less 
+        -- cumbersome than Verilog but it's certainly
+        -- no better... I need to do some real soul-
+        -- searching and design something more usable
+        if (time_until_vld > 0) then
+            time_until_vld = time_until_vld - 1
         end
+        local rdy = r:get_value(vpi.IntVal)
+        if (vld ~= 0) then
+            if (rdy ~= 0) then
+                cnt = cnt + 1
+                time_until_vld = math.random(l,h)
+                if (time_until_vld == 0) then
+                    vld = 1
+                else 
+                    vld = 0
+                end
+            end
+        elseif (time_until_vld == 0) then
+            vld = 1
+        end
+
+        -- Need to be careful to only put values as if we
+        -- had written Verilog with non-blocking assignments
+        vpi.register_cb(wait_NBA)
+        -- ugly... need to use different yields for different 
+        -- reasons...
+        yield()
+        v:put_value(vld)
+        if (v == 0) then
+            d:put_value("0xxx")
+        else 
+            d:put_value(cnt)
+        end
+
+        -- Wait for next posedge_clk
         coroutine.yield()
     end
 end
@@ -135,19 +179,32 @@ DUT = vpi.handle_by_name(nil, "tb.DUT")
 clk = DUT:handle_by_name("clk")
 rstn = DUT:handle_by_name("i_reset_n")
 irdy = DUT:handle_by_name("i_rdy")
+ivld = DUT:handle_by_name("i_vld")
+-- Give ivld initial value to prevent xprop
+ivld:put_value(0)
 
 table.insert(at_posedge, {c = coroutine.create(prop_checker), args={m=DUT}})
 table.insert(at_posedge, {c = coroutine.create(random_driver), args={m=irdy}})
---[[table.insert(
+table.insert(
     at_posedge, {
         c = coroutine.create(hs_seq_driver), 
+        args={
+            d = DUT:handle_by_name("i_data"),
+            v = DUT:handle_by_name("i_vld"),
+            r = DUT:handle_by_name("o_rdy")
+        }
+    }
+)
+table.insert(
+    at_posedge, {
+        c = coroutine.create(hs_watch), 
         args={
             d = DUT:handle_by_name("o_data"),
             v = DUT:handle_by_name("o_vld"),
             r = DUT:handle_by_name("i_rdy")
         }
     }
-)]]--
+)
 
 c = coroutine.create(clock_driver)
 assert(coroutine.resume(c, clk, 200))

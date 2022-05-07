@@ -15,7 +15,7 @@ module pipe_stage #(
     input i_rdy
 );
 
-    initial $monitor("Somebody changed my clk to %d", clk);
+    //initial $monitor("Somebody changed my clk to %d", clk);
 
     wire rd_sig = o_vld && i_rdy;
     wire wr_sig = i_vld && o_rdy;
@@ -73,27 +73,76 @@ module pipe_stage #(
     assign o_rdy = !storage_vld[wr_ptr];
 endmodule
 
+module counter # (
+    parameter WIDTH=8
+) (
+    input clk,
+    input i_reset_n,
+
+    input i_en,
+    output [WIDTH-1:0] o_cnt
+);
+    reg [WIDTH-1:0] cnt;
+
+    always @(posedge clk) begin
+        if (!i_reset_n) begin
+            cnt <= {WIDTH{1'b0}};
+        end else begin
+            cnt <= cnt + 1'b1; //Should be unsigned... right?
+                               //Gotta check the gotchas...
+        end
+    end
+
+    assign o_cnt = cnt;
+endmodule
+
+
 
 module tb;
 
-reg thing = 0;
-
-always #2 thing = ~thing;
+    //Simple thing to test value-change callbacks
+    reg thing = 0;
+    always #2 thing = ~thing;
     
-pipe_stage DUT();
+    pipe_stage DUT();
 
-event my_ev;
 
-always @(my_ev) begin
-    $display("Someone triggered an event!\n");
-end
+    //Simple thing to test those tricky time-related callbacks
+    //for the different phases of the verilog event queue
+    
+    //Hmm... it might be a bad sign that it's still more
+    //convenient to make certain testbench inputs in verilog...
+    //Maybe if I had a better support library it would be
+    //nicer in lua?
+    reg tb_clk = 0;
+    always #5 tb_clk = ~tb_clk;
+    reg tb_rstn = 0;
+    initial #10 tb_rstn = 1;
+    wire [7:0] cnt;
+    counter u_cnt(
+        .clk(tb_clk),
+        .i_reset_n(tb_rstn),
+        .i_en(1'b1),
+        .o_cnt(cnt)
+    );
 
-initial begin
-    $display("Begin typing lua code. (Sorry, no autocomplete!)");
-    $lua_repl;
-    #40
-    $display("Goodbye");
-    $finish;
-end
+    //Simple thing to test events
+    event my_ev; 
+    always @(my_ev) begin
+        $display("Someone triggered an event!\n");
+    end
+    
+    initial begin
+        // "dump" is such an ugly word :-/
+        $dumpfile("sim_out.vcd");
+        $dumpvars;
+        $dumpon;
+        $dumplimit(10240);
+        $display("Begin typing lua code. (Sorry, no autocomplete!)");
+        $lua_repl;
+        #40
+        $display("Goodbye");
+        $finish;
+    end
 
 endmodule

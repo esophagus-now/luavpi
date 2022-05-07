@@ -1,0 +1,43 @@
+[*]
+[*] GTKWave Analyzer v3.3.110 (w)1999-2020 BSI
+[*] Sat May  7 10:14:22 2022
+[*]
+[dumpfile] "/home/runner/Embedded-lua-in-verilog/sim_out.vcd"
+[dumpfile_mtime] "Sat May  7 10:14:14 2022"
+[dumpfile_size] 10320
+[savefile] "/home/runner/Embedded-lua-in-verilog/sim_out.gtkw"
+[timestart] 0
+[size] 1011 419
+[pos] -1 -1
+*-10.710017 2500 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] tb.
+[sst_width] 284
+[signals_width] 190
+[sst_expanded] 1
+[sst_vpaned_height] 93
+@200
+-Pipe stage ports
+@28
+tb.DUT.clk
+tb.DUT.i_reset_n
+@22
+tb.DUT.i_data[7:0]
+@28
+tb.DUT.i_vld
+tb.DUT.o_rdy
+@22
+tb.DUT.o_data[7:0]
+@29
+tb.DUT.o_vld
+@28
+tb.DUT.i_rdy
+@200
+-Pipe stage internals
+@28
+tb.DUT.storage_vld[1:0]
+tb.DUT.wr_ptr
+tb.DUT.rd_ptr
+tb.DUT.wr_sig
+tb.DUT.rd_sig
+[pattern_trace] 1
+[pattern_trace] 0
